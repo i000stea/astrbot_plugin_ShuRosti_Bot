@@ -1,4 +1,5 @@
 import os
+import re
 import time
 
 from astrbot.api.event import filter, AstrMessageEvent
@@ -39,13 +40,18 @@ class MyPlugin(Star):
     def _sender_id(self, event: AstrMessageEvent) -> str:
         return str(event.get_sender_id())
 
+    @staticmethod
+    def _parse_args(message_str: str) -> list[str]:
+        cleaned = re.sub(r"\[At:[^\]]*\]", "", message_str).strip()
+        return cleaned.split()
+
     @filter.command("skland绑定")
     async def cmd_bind_password(self, event: AstrMessageEvent):
         """
         用密码绑定森空岛账号。
         用法：/skland绑定 手机号 密码
         """
-        parts = event.message_str.strip().split()
+        parts = self._parse_args(event.message_str)
         if len(parts) < 3:
             yield event.plain_result(_BIND_HELP)
             event.stop_event()
@@ -81,7 +87,7 @@ class MyPlugin(Star):
         向手机号发送森空岛登录验证码。
         用法：/skland发送验证码 手机号
         """
-        parts = event.message_str.strip().split()
+        parts = self._parse_args(event.message_str)
         if len(parts) < 2:
             yield event.plain_result("用法：/skland发送验证码 手机号")
             event.stop_event()
@@ -104,7 +110,7 @@ class MyPlugin(Star):
         用短信验证码绑定森空岛账号。
         用法：/skland绑定验证码 手机号 验证码
         """
-        parts = event.message_str.strip().split()
+        parts = self._parse_args(event.message_str)
         if len(parts) < 3:
             yield event.plain_result("用法：/skland绑定验证码 手机号 验证码")
             event.stop_event()
