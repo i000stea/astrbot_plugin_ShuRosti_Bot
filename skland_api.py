@@ -265,10 +265,12 @@ async def _hg_post(path: str, payload: dict, did: str) -> dict:
     return body.get("data", {})
 
 
-async def _sk_post(path: str, payload: dict, cred: str | None = None) -> dict:
+async def _sk_post(path: str, payload: dict, cred: str | None = None, token: str | None = None) -> dict:
     headers = {**_HEADERS}
     if cred:
         headers["cred"] = cred
+    if token:
+        headers["token"] = token
     url = _SK_BASE + path
     logger.info(f"[sk_post] 请求: {url} payload={payload}")
     try:
@@ -379,8 +381,10 @@ async def check_cred(cred: str) -> bool:
         return False
 
 
-async def _sk_get(path: str, params: dict | None, cred: str) -> dict:
+async def _sk_get(path: str, params: dict | None, cred: str, token: str | None = None) -> dict:
     headers = {**_HEADERS, "cred": cred}
+    if token:
+        headers["token"] = token
     url = _SK_BASE + path
     logger.info(f"[sk_get] 请求: {url} params={params}")
     try:
@@ -404,8 +408,8 @@ async def _sk_get(path: str, params: dict | None, cred: str) -> dict:
     return body.get("data", {})
 
 
-async def get_binding_list(cred: str) -> list[dict]:
-    data = await _sk_get("/api/v1/game/player/binding", None, cred)
+async def get_binding_list(cred: str, token: str | None = None) -> list[dict]:
+    data = await _sk_get("/api/v1/game/player/binding", None, cred, token)
     logger.info(f"[get_binding_list] 原始数据: {data}")
     result = []
     for game in data.get("list", []):
@@ -427,13 +431,14 @@ async def get_binding_list(cred: str) -> list[dict]:
 _ALREADY_SIGNED_KEYWORDS = ("今天已经签到", "请勿重复签到", "already", "10001", "重复签到")
 
 
-async def do_attendance(cred: str, uid: str, game_id: str = "1") -> dict:
+async def do_attendance(cred: str, uid: str, game_id: str = "1", token: str | None = None) -> dict:
     logger.info(f"[do_attendance] 尝试签到 uid={uid} game_id={game_id}")
     try:
         data = await _sk_post(
             "/api/v1/game/attendance",
             {"uid": uid, "gameId": game_id},
             cred,
+            token,
         )
         awards = data.get("awards") or data.get("resourceList") or []
         logger.info(f"[do_attendance] 签到成功 uid={uid} 奖励={awards}")
@@ -447,12 +452,13 @@ async def do_attendance(cred: str, uid: str, game_id: str = "1") -> dict:
         raise
 
 
-async def get_monthly_rewards(cred: str, uid: str, game_id: str = "1") -> list[dict]:
+async def get_monthly_rewards(cred: str, uid: str, game_id: str = "1", token: str | None = None) -> list[dict]:
     logger.info(f"[get_monthly_rewards] 获取签到奖励 uid={uid} game_id={game_id}")
     data = await _sk_get(
         "/api/v1/game/attendance/reward",
         {"uid": uid, "gameId": game_id},
         cred,
+        token,
     )
     logger.info(f"[get_monthly_rewards] 获取成功 uid={uid} 条目数={len(data.get('signInList', []))}")
     return data.get("signInList", [])
