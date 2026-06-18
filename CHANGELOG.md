@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.15] - 2026-06-18
+
+### Fixed
+
+- 修复森空岛游戏接口返回 HTTP 401 的根本原因：所有需鉴权的请求现在正确生成并携带 `sign` 签名请求头
+- 新增 `_generate_sign` 函数，实现官方 HMAC-SHA256 + MD5 双重签名算法（以 `token` 为密钥，对 `请求路径 + body/query + 时间戳 + 固定 header JSON` 进行签名）
+- `_sk_get` 与 `_sk_post` 在持有 `token` 时自动注入 `sign`、`platform`、`timestamp`、`dId`、`vName` 等必要请求头
+
 ## [1.0.14] - 2026-06-18
 
 ### Fixed

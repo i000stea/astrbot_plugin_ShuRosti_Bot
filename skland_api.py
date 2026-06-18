@@ -2,6 +2,7 @@ import asyncio
 import base64
 import gzip
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -180,6 +181,16 @@ def _get_fallback_did() -> str:
     return "de9759a5afaa634f"
 
 
+def _generate_sign(token: str, path: str, body_or_query: str) -> tuple[str, dict]:
+    t = str(int(time.time()) - 2)
+    header_ca = {"platform": "", "timestamp": t, "dId": "", "vName": ""}
+    header_ca_str = json.dumps(header_ca, separators=(",", ":"))
+    s = path + body_or_query + t + header_ca_str
+    hex_s = hmac.new(token.encode("utf-8"), s.encode("utf-8"), hashlib.sha256).hexdigest()
+    sign = hashlib.md5(hex_s.encode("utf-8")).hexdigest()
+    return sign, header_ca
+
+
 async def _get_did() -> str:
     crypto = _try_import_crypto()
     if crypto is None:
@@ -270,7 +281,9 @@ async def _sk_post(path: str, payload: dict, cred: str | None = None, token: str
     if cred:
         headers["cred"] = cred
     if token:
-        headers["token"] = token
+        sign, header_ca = _generate_sign(token, path, json.dumps(payload, separators=(",", ":")))
+        headers["sign"] = sign
+        headers.update(header_ca)
     url = _SK_BASE + path
     logger.info(f"[sk_post] 请求: {url} payload={payload}")
     try:
@@ -384,7 +397,11 @@ async def check_cred(cred: str) -> bool:
 async def _sk_get(path: str, params: dict | None, cred: str, token: str | None = None) -> dict:
     headers = {**_HEADERS, "cred": cred}
     if token:
-        headers["token"] = token
+        from urllib.parse import urlencode
+        query_str = urlencode(params) if params else ""
+        sign, header_ca = _generate_sign(token, path, query_str)
+        headers["sign"] = sign
+        headers.update(header_ca)
     url = _SK_BASE + path
     logger.info(f"[sk_get] 请求: {url} params={params}")
     try:
