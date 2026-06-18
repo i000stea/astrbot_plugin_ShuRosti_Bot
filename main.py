@@ -3,6 +3,7 @@ import os
 import re
 import time
 
+from astrbot.api import AstrBotConfig
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 
@@ -21,39 +22,30 @@ from .skland_api import (
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "data", "tokens.db")
 
-_BIND_HELP = (
-    "绑定森空岛账号用法：\n"
-    "  密码登录（建议私聊）：/skland登录 手机号 密码\n"
-    "  验证码登录：\n"
-    "    第一步：/skland绑定手机号 手机号\n"
-    "    第二步：/skland验证码 验证码"
-)
-
 _AT_RE = re.compile(r"\[At:[^\]]*\]")
-
-_SKLAND_CMDS = (
-    "skland绑定手机号",
-    "skland验证码",
-    "skland登录",
-    "skland状态",
-    "skland解绑",
-    "skland帮助",
-    "开启自动签到",
-    "关闭自动签到",
-    "查阅本月签到奖励",
-)
-
-_CMD_RE = re.compile(
-    r"^/?(" + "|".join(re.escape(c) for c in _SKLAND_CMDS) + r")((?:\s+\S+)*)$"
-)
 
 _SIGN_HOUR = 6
 _SIGN_MINUTE = 0
 
 
-def _extract(message_str: str):
+def _extract(message_str: str, bot_name: str):
     cleaned = _AT_RE.sub("", message_str).strip()
-    m = _CMD_RE.match(cleaned)
+    skland_cmds = (
+        f"{bot_name}绑定手机号",
+        f"{bot_name}验证码",
+        f"{bot_name}登录",
+        f"{bot_name}状态",
+        f"{bot_name}解绑",
+        f"{bot_name}帮助",
+        f"{bot_name}详细帮助",
+        "开启自动签到",
+        "关闭自动签到",
+        "查阅本月签到奖励",
+    )
+    cmd_re = re.compile(
+        r"^/?(" + "|".join(re.escape(c) for c in skland_cmds) + r")((?:\s+\S+)*)$"
+    )
+    m = cmd_re.match(cleaned)
     if m is None:
         return None, []
     cmd = m.group(1)
@@ -123,12 +115,20 @@ async def _do_sign_for_user(db: TokenDatabase, qq_id: str) -> str:
     return "\n".join(results)
 
 
-@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.2.0")
+@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.7")
 class MyPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
+        self._config = config
         self._db = TokenDatabase(_DB_PATH)
         self._scheduler_task: asyncio.Task | None = None
+
+    @property
+    def _bot_name(self) -> str:
+        try:
+            return self._config.get("bot_name", "森空岛bot") or "森空岛bot"
+        except Exception:
+            return "森空岛bot"
 
     async def initialize(self):
         self._scheduler_task = asyncio.create_task(self._daily_sign_scheduler())
@@ -183,32 +183,80 @@ class MyPlugin(Star):
             event.stop_event()
             return
 
-        cmd, args = _extract(event.message_str or "")
+        bot_name = self._bot_name
+        cmd, args = _extract(event.message_str or "", bot_name)
         if cmd is None:
             return
 
         qq_id = self._sender_id(event)
 
-        if cmd == "skland帮助":
+        bind_help = (
+            f"绑定{bot_name}账号用法：\n"
+            f"  密码登录（建议私聊）：/{bot_name}登录 手机号 密码\n"
+            f"  验证码登录：\n"
+            f"    第一步：/{bot_name}绑定手机号 手机号\n"
+            f"    第二步：/{bot_name}验证码 验证码"
+        )
+
+        if cmd == f"{bot_name}帮助":
             yield event.plain_result(
-                "🗂 森空岛Bot 可用命令\n\n"
-                "登录（密码，建议私聊）：\n  /skland登录 手机号 密码\n\n"
-                "绑定/登录（验证码）：\n"
-                "  第一步：/skland绑定手机号 手机号\n"
-                "  第二步：/skland验证码 验证码\n\n"
-                "查询绑定状态：\n  /skland状态\n\n"
-                "解除绑定：\n  /skland解绑\n\n"
-                "自动签到：\n  /开启自动签到\n  /关闭自动签到\n\n"
-                "查询本月签到奖励：\n  /查阅本月签到奖励\n\n"
-                "本帮助：\n  /skland帮助"
+                f"🗂 {bot_name} 可用命令\n"
+                f"/{bot_name}登录 手机号 密码      — 密码登录（建议私聊）\n"
+                f"/{bot_name}绑定手机号 手机号      — 验证码登录第一步\n"
+                f"/{bot_name}验证码 验证码          — 验证码登录第二步\n"
+                f"/{bot_name}状态                  — 查看绑定状态\n"
+                f"/{bot_name}解绑                  — 解除账号绑定\n"
+                f"/开启自动签到                     — 开启每日自动签到\n"
+                f"/关闭自动签到                     — 关闭每日自动签到\n"
+                f"/查阅本月签到奖励                 — 查看本月签到奖励\n"
+                f"/{bot_name}帮助                  — 显示此帮助\n"
+                f"/{bot_name}详细帮助              — 显示详细说明"
             )
             event.stop_event()
             return
 
-        if cmd == "skland状态":
+        if cmd == f"{bot_name}详细帮助":
+            yield event.plain_result(
+                f"📖 {bot_name} 详细帮助\n"
+                "\n"
+                f"【/{bot_name}登录 手机号 密码】\n"
+                "使用手机号和密码登录森空岛账号，登录成功后自动保存凭证。\n"
+                "⚠️ 含有隐私信息，请务必在私聊中使用，群聊中发送将被拒绝。\n"
+                "\n"
+                f"【/{bot_name}绑定手机号 手机号】\n"
+                "验证码登录的第一步，向指定手机号发送短信验证码。\n"
+                "收到验证码后，继续使用下方指令完成绑定。\n"
+                "\n"
+                f"【/{bot_name}验证码 验证码】\n"
+                "验证码登录的第二步，输入收到的短信验证码完成账号绑定。\n"
+                f"请确保已先执行 /{bot_name}绑定手机号。\n"
+                "\n"
+                f"【/{bot_name}状态】\n"
+                "查看当前绑定的森空岛账号信息，包括用户ID、手机号（脱敏）、\n"
+                "凭证有效性以及自动签到开关状态。\n"
+                "\n"
+                f"【/{bot_name}解绑】\n"
+                "解除当前账号与Bot的绑定，本地保存的凭证将被彻底删除。\n"
+                "解绑后自动签到也将同步关闭。\n"
+                "\n"
+                "【/开启自动签到】\n"
+                "开启每日自动签到功能，Bot 将在每天早上 6:00 自动完成签到。\n"
+                "开启后会立即执行一次签到以确认配置正常。\n"
+                "\n"
+                "【/关闭自动签到】\n"
+                "关闭每日自动签到功能，之后每天不再自动执行签到。\n"
+                "\n"
+                "【/查阅本月签到奖励】\n"
+                "查询明日方舟森空岛本月签到奖励列表，优先以图片形式展示，\n"
+                "若图片生成失败则以文字形式返回。"
+            )
+            event.stop_event()
+            return
+
+        if cmd == f"{bot_name}状态":
             record = await asyncio.to_thread(self._db.get, qq_id)
             if record is None:
-                yield event.plain_result(f"❌ 你尚未绑定森空岛账号。\n{_BIND_HELP}")
+                yield event.plain_result(f"❌ 你尚未绑定森空岛账号。\n{bind_help}")
                 event.stop_event()
                 return
             valid = await check_cred(record.cred)
@@ -227,7 +275,7 @@ class MyPlugin(Star):
             event.stop_event()
             return
 
-        if cmd == "skland解绑":
+        if cmd == f"{bot_name}解绑":
             deleted = await asyncio.to_thread(self._db.delete, qq_id)
             if deleted:
                 await asyncio.to_thread(self._db.set_auto_sign, qq_id, False)
@@ -237,16 +285,16 @@ class MyPlugin(Star):
             event.stop_event()
             return
 
-        if cmd == "skland登录":
+        if cmd == f"{bot_name}登录":
             if _is_group_message(event):
                 yield event.plain_result(
                     "⚠️⚠️⚠️ 严重警告：请勿在群聊中发送手机号/密码等隐私信息！\n"
-                    "为了你的账号安全，/skland登录 仅支持私聊使用，请私信 Bot 后重试。"
+                    f"为了你的账号安全，/{bot_name}登录 仅支持私聊使用，请私信 Bot 后重试。"
                 )
                 event.stop_event()
                 return
             if len(args) < 2:
-                yield event.plain_result("用法：/skland登录 手机号 密码")
+                yield event.plain_result(f"用法：/{bot_name}登录 手机号 密码")
                 event.stop_event()
                 return
             phone, password = args[0], args[1]
@@ -273,9 +321,9 @@ class MyPlugin(Star):
             event.stop_event()
             return
 
-        if cmd == "skland绑定手机号":
+        if cmd == f"{bot_name}绑定手机号":
             if len(args) < 1:
-                yield event.plain_result("用法：/skland绑定手机号 手机号")
+                yield event.plain_result(f"用法：/{bot_name}绑定手机号 手机号")
                 event.stop_event()
                 return
             phone = args[0]
@@ -288,19 +336,19 @@ class MyPlugin(Star):
                 return
             yield event.plain_result(
                 f"📱 验证码已发送至 {phone[:3]}****{phone[-4:]}。\n"
-                "请继续发送：/skland验证码 验证码"
+                f"请继续发送：/{bot_name}验证码 验证码"
             )
             event.stop_event()
             return
 
-        if cmd == "skland验证码":
+        if cmd == f"{bot_name}验证码":
             if len(args) < 1:
-                yield event.plain_result("用法：/skland验证码 验证码")
+                yield event.plain_result(f"用法：/{bot_name}验证码 验证码")
                 event.stop_event()
                 return
             pending = await asyncio.to_thread(self._db.get_pending_phone, qq_id)
             if pending is None:
-                yield event.plain_result("未找到已绑定的手机号，请先使用：/skland绑定手机号 手机号")
+                yield event.plain_result(f"未找到已绑定的手机号，请先使用：/{bot_name}绑定手机号 手机号")
                 event.stop_event()
                 return
             phone, _ = pending
@@ -331,7 +379,7 @@ class MyPlugin(Star):
         if cmd == "开启自动签到":
             record = await asyncio.to_thread(self._db.get, qq_id)
             if record is None:
-                yield event.plain_result(f"❌ 请先绑定账号。\n{_BIND_HELP}")
+                yield event.plain_result(f"❌ 请先绑定账号。\n{bind_help}")
                 event.stop_event()
                 return
             await asyncio.to_thread(self._db.set_auto_sign, qq_id, True)
@@ -345,7 +393,7 @@ class MyPlugin(Star):
         if cmd == "关闭自动签到":
             record = await asyncio.to_thread(self._db.get, qq_id)
             if record is None:
-                yield event.plain_result(f"❌ 请先绑定账号。\n{_BIND_HELP}")
+                yield event.plain_result(f"❌ 请先绑定账号。\n{bind_help}")
                 event.stop_event()
                 return
             await asyncio.to_thread(self._db.set_auto_sign, qq_id, False)
@@ -356,7 +404,7 @@ class MyPlugin(Star):
         if cmd == "查阅本月签到奖励":
             record = await asyncio.to_thread(self._db.get, qq_id)
             if record is None:
-                yield event.plain_result(f"❌ 请先绑定账号。\n{_BIND_HELP}")
+                yield event.plain_result(f"❌ 请先绑定账号。\n{bind_help}")
                 event.stop_event()
                 return
 

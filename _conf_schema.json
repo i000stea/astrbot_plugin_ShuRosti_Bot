@@ -1,0 +1,8 @@
+{
+  "bot_name": {
+    "description": "释放道（AstrBot面板）中显示的Bot名称，用作指令前缀",
+    "type": "string",
+    "default": "森空岛bot",
+    "hint": "修改后所有 /森空岛botXXX 指令前缀将随之改变，例如改为「skland」后指令变为 /skland帮助"
+  }
+}
