@@ -141,7 +141,7 @@ async def _do_sign_for_user(db: TokenDatabase, qq_id: str) -> str:
     return result_str
 
 
-@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.12")
+@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.13")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

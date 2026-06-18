@@ -285,6 +285,8 @@ async def _sk_post(path: str, payload: dict, cred: str | None = None) -> dict:
         logger.error(f"[sk_post] 网络请求失败: {url} 错误={e}")
         raise SklandAPIError(f"网络请求失败：{e}") from e
     logger.info(f"[sk_post] 响应: {url} body={body}")
+    if resp.status == 401 or body.get("code") == 10000:
+        raise SklandAPIError("凭证已失效或请求异常，请重新绑定账号")
     if body.get("code") != 0:
         raise SklandAPIError(body.get("message") or str(body))
     return body.get("data", {})
@@ -369,7 +371,9 @@ async def check_cred(cred: str) -> bool:
                 logger.info(f"[check_cred] HTTP状态码: {resp.status}")
                 body = await resp.json(content_type=None)
         logger.info(f"[check_cred] 响应: code={body.get('code')}")
-        return body.get("code") == 0
+        if resp.status == 401:
+            return False
+        return resp.status == 200 and body.get("code") == 0
     except Exception as e:
         logger.error(f"[check_cred] 请求失败: {e}")
         return False
@@ -393,6 +397,8 @@ async def _sk_get(path: str, params: dict | None, cred: str) -> dict:
         logger.error(f"[sk_get] 网络请求失败: {url} 错误={e}")
         raise SklandAPIError(f"网络请求失败：{e}") from e
     logger.info(f"[sk_get] 响应: {url} body={body}")
+    if resp.status == 401 or body.get("code") == 10000:
+        raise SklandAPIError("凭证已失效或请求异常，请重新绑定账号")
     if body.get("code") != 0:
         raise SklandAPIError(body.get("message") or str(body))
     return body.get("data", {})
