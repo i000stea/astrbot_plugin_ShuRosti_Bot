@@ -39,6 +39,15 @@ class TokenDatabase:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pending_phones (
+                    qq_id      TEXT PRIMARY KEY,
+                    phone      TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+                """
+            )
             conn.commit()
 
     def upsert(self, qq_id: str, cred: str, token: str, skland_user_id: str, phone: str, updated_at: int) -> None:
@@ -86,3 +95,36 @@ class TokenDatabase:
         with self._connect() as conn:
             rows = conn.execute("SELECT qq_id FROM user_tokens").fetchall()
         return [r["qq_id"] for r in rows]
+
+    def set_pending_phone(self, qq_id: str, phone: str, updated_at: int) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO pending_phones (qq_id, phone, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(qq_id) DO UPDATE SET
+                    phone      = excluded.phone,
+                    updated_at = excluded.updated_at
+                """,
+                (qq_id, phone, updated_at),
+            )
+            conn.commit()
+
+    def get_pending_phone(self, qq_id: str) -> Optional[tuple[str, int]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT phone, updated_at FROM pending_phones WHERE qq_id = ?",
+                (qq_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return row["phone"], row["updated_at"]
+
+    def delete_pending_phone(self, qq_id: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM pending_phones WHERE qq_id = ?",
+                (qq_id,),
+            )
+            conn.commit()
+        return cursor.rowcount > 0
