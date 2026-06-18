@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.16] - 2026-06-18
+
+### Fixed
+
+- 修复签到请求返回 401 错误的根本原因：在 `_HEADERS` 中补充缺失的 `vName`、`vCode`、`platform`、`dId` 请求头字段
+- 修复 `_sk_get` 函数中 HTTP 404 或非 JSON 响应导致的 JSON 解析崩溃问题
+- 修复 `get_monthly_rewards` 接口失效（返回 404）时的容错处理，降级返回空列表
+
 ## [1.0.15] - 2026-06-18
 
 ### Fixed

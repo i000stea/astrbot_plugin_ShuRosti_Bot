@@ -90,6 +90,10 @@ _APP_CODE = "4ca99fa6b56cc2ba"
 _HEADERS = {
     "Content-Type": "application/json",
     "User-Agent": "Skland/1.0.1 (com.hypergryph.skland; build:100001014; Android 31; ) Okhttp/4.11.0",
+    "vName": "1.0.1",
+    "vCode": "100001014",
+    "platform": "1",
+    "dId": "de9759a5afaa634f",
 }
 
 
@@ -413,7 +417,15 @@ async def _sk_get(path: str, params: dict | None, cred: str, token: str | None =
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 logger.info(f"[sk_get] HTTP状态码: {resp.status}")
-                body = await resp.json(content_type=None)
+                if resp.status == 404:
+                    raise SklandAPIError(f"接口不存在 (404): {path}")
+                try:
+                    body = await resp.json(content_type=None)
+                except Exception as json_e:
+                    logger.error(f"[sk_get] JSON解析失败: {url} 错误={json_e}")
+                    raise SklandAPIError(f"响应解析失败：{json_e}") from json_e
+    except SklandAPIError:
+        raise
     except Exception as e:
         logger.error(f"[sk_get] 网络请求失败: {url} 错误={e}")
         raise SklandAPIError(f"网络请求失败：{e}") from e
@@ -472,11 +484,15 @@ async def do_attendance(cred: str, uid: str, game_id: str = "1", token: str | No
 
 async def get_monthly_rewards(cred: str, uid: str, game_id: str = "1", token: str | None = None) -> list[dict]:
     logger.info(f"[get_monthly_rewards] 获取签到奖励 uid={uid} game_id={game_id}")
-    data = await _sk_get(
-        "/api/v1/game/attendance/reward",
-        {"uid": uid, "gameId": game_id},
-        cred,
-        token,
-    )
+    try:
+        data = await _sk_get(
+            "/api/v1/game/attendance/reward",
+            {"uid": uid, "gameId": game_id},
+            cred,
+            token,
+        )
+    except SklandAPIError as e:
+        logger.warning(f"[get_monthly_rewards] 获取失败，返回空列表 uid={uid} 错误={e}")
+        return []
     logger.info(f"[get_monthly_rewards] 获取成功 uid={uid} 条目数={len(data.get('signInList', []))}")
     return data.get("signInList", [])
