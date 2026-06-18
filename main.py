@@ -24,6 +24,31 @@ _BIND_HELP = (
     "    第二步：/skland绑定验证码 手机号 验证码"
 )
 
+_AT_RE = re.compile(r"\[At:[^\]]*\]")
+
+_SKLAND_CMDS = (
+    "skland绑定验证码",
+    "skland绑定",
+    "skland发送验证码",
+    "skland状态",
+    "skland解绑",
+    "skland帮助",
+)
+
+_CMD_RE = re.compile(
+    r"^/?(" + "|".join(re.escape(c) for c in _SKLAND_CMDS) + r")((?:\s+\S+)*)$"
+)
+
+
+def _extract(message_str: str):
+    cleaned = _AT_RE.sub("", message_str).strip()
+    m = _CMD_RE.match(cleaned)
+    if m is None:
+        return None, []
+    cmd = m.group(1)
+    args = m.group(2).split()
+    return cmd, args
+
 
 @register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.2.0")
 class MyPlugin(Star):
@@ -40,168 +65,10 @@ class MyPlugin(Star):
     def _sender_id(self, event: AstrMessageEvent) -> str:
         return str(event.get_sender_id())
 
-    @staticmethod
-    def _parse_args(message_str: str) -> list[str]:
-        cleaned = re.sub(r"\[At:[^\]]*\]", "", message_str).strip()
-        return cleaned.split()
-
-    @filter.command("skland绑定")
-    async def cmd_bind_password(self, event: AstrMessageEvent):
-        """
-        用密码绑定森空岛账号。
-        用法：/skland绑定 手机号 密码
-        """
-        parts = self._parse_args(event.message_str)
-        if len(parts) < 3:
-            yield event.plain_result(_BIND_HELP)
-            event.stop_event()
-            return
-
-        phone, password = parts[1], parts[2]
-        qq_id = self._sender_id(event)
-
-        try:
-            result = await login_with_password(phone, password)
-        except SklandAPIError as e:
-            yield event.plain_result(f"❌ 登录失败：{e}")
-            event.stop_event()
-            return
-
-        self._db.upsert(
-            qq_id=qq_id,
-            cred=result["cred"],
-            token=result["token"],
-            skland_user_id=result["user_id"],
-            phone=phone,
-            updated_at=int(time.time()),
-        )
-        yield event.plain_result(
-            f"✅ 绑定成功！\n森空岛用户 ID：{result['user_id']}\n"
-            "凭证已安全保存，请勿将凭证告知他人。"
-        )
-        event.stop_event()
-
-    @filter.command("skland发送验证码")
-    async def cmd_send_code(self, event: AstrMessageEvent):
-        """
-        向手机号发送森空岛登录验证码。
-        用法：/skland发送验证码 手机号
-        """
-        parts = self._parse_args(event.message_str)
-        if len(parts) < 2:
-            yield event.plain_result("用法：/skland发送验证码 手机号")
-            event.stop_event()
-            return
-
-        phone = parts[1]
-        try:
-            await send_phone_code(phone)
-        except SklandAPIError as e:
-            yield event.plain_result(f"❌ 发送失败：{e}")
-            event.stop_event()
-            return
-
-        yield event.plain_result(f"📱 验证码已发送至 {phone[:3]}****{phone[-4:]}，请在 5 分钟内使用 /skland绑定验证码 完成绑定。")
-        event.stop_event()
-
-    @filter.command("skland绑定验证码")
-    async def cmd_bind_code(self, event: AstrMessageEvent):
-        """
-        用短信验证码绑定森空岛账号。
-        用法：/skland绑定验证码 手机号 验证码
-        """
-        parts = self._parse_args(event.message_str)
-        if len(parts) < 3:
-            yield event.plain_result("用法：/skland绑定验证码 手机号 验证码")
-            event.stop_event()
-            return
-
-        phone, sms_code = parts[1], parts[2]
-        qq_id = self._sender_id(event)
-
-        try:
-            result = await login_with_code(phone, sms_code)
-        except SklandAPIError as e:
-            yield event.plain_result(f"❌ 登录失败：{e}")
-            event.stop_event()
-            return
-
-        self._db.upsert(
-            qq_id=qq_id,
-            cred=result["cred"],
-            token=result["token"],
-            skland_user_id=result["user_id"],
-            phone=phone,
-            updated_at=int(time.time()),
-        )
-        yield event.plain_result(
-            f"✅ 绑定成功！\n森空岛用户 ID：{result['user_id']}\n"
-            "凭证已安全保存，请勿将凭证告知他人。"
-        )
-        event.stop_event()
-
-    @filter.command("skland状态")
-    async def cmd_status(self, event: AstrMessageEvent):
-        """
-        查询当前账号的森空岛绑定状态及 cred 有效性。
-        用法：/skland状态
-        """
-        qq_id = self._sender_id(event)
-        record = self._db.get(qq_id)
-
-        if record is None:
-            yield event.plain_result(f"❌ 你尚未绑定森空岛账号。\n{_BIND_HELP}")
-            event.stop_event()
-            return
-
-        valid = await check_cred(record.cred)
-        update_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.updated_at))
-        status_icon = "✅ 有效" if valid else "❌ 已失效（请重新绑定）"
-
-        yield event.plain_result(
-            f"📋 森空岛绑定信息\n"
-            f"森空岛用户 ID：{record.skland_user_id}\n"
-            f"手机号：{record.phone[:3]}****{record.phone[-4:] if len(record.phone) >= 4 else record.phone}\n"
-            f"凭证状态：{status_icon}\n"
-            f"最后更新：{update_time}"
-        )
-        event.stop_event()
-
-    @filter.command("skland解绑")
-    async def cmd_unbind(self, event: AstrMessageEvent):
-        """
-        解除森空岛账号绑定并删除本地凭证。
-        用法：/skland解绑
-        """
-        qq_id = self._sender_id(event)
-        deleted = self._db.delete(qq_id)
-        if deleted:
-            yield event.plain_result("✅ 已成功解除森空岛账号绑定，本地凭证已删除。")
-        else:
-            yield event.plain_result("❌ 你尚未绑定森空岛账号。")
-        event.stop_event()
-
-    @filter.command("skland帮助")
-    async def cmd_help(self, event: AstrMessageEvent):
-        """
-        显示所有可用命令。
-        """
-        help_text = (
-            "🗂 森空岛Bot 可用命令\n\n"
-            "绑定账号（密码）：\n  /skland绑定 手机号 密码\n\n"
-            "绑定账号（验证码）：\n"
-            "  第一步：/skland发送验证码 手机号\n"
-            "  第二步：/skland绑定验证码 手机号 验证码\n\n"
-            "查询绑定状态：\n  /skland状态\n\n"
-            "解除绑定：\n  /skland解绑\n\n"
-            "本帮助：\n  /skland帮助"
-        )
-        yield event.plain_result(help_text)
-        event.stop_event()
-
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_all_message(self, event: AstrMessageEvent):
-        text = (event.message_str or "").strip()
+        text = _AT_RE.sub("", event.message_str or "").strip()
+
         _reply_map = {
             "/测试1": "这是测试1的固定回复。",
             "/测试2": "这是测试2的固定回复。",
@@ -210,7 +77,127 @@ class MyPlugin(Star):
             "测试2": "这是测试2的固定回复。",
             "测试3": "这是测试3的固定回复。",
         }
-        reply = _reply_map.get(text)
-        if reply:
-            yield event.plain_result(reply)
+        if text in _reply_map:
+            yield event.plain_result(_reply_map[text])
+            event.stop_event()
+            return
+
+        cmd, args = _extract(event.message_str or "")
+        if cmd is None:
+            return
+
+        qq_id = self._sender_id(event)
+
+        if cmd == "skland帮助":
+            yield event.plain_result(
+                "🗂 森空岛Bot 可用命令\n\n"
+                "绑定账号（密码）：\n  /skland绑定 手机号 密码\n\n"
+                "绑定账号（验证码）：\n"
+                "  第一步：/skland发送验证码 手机号\n"
+                "  第二步：/skland绑定验证码 手机号 验证码\n\n"
+                "查询绑定状态：\n  /skland状态\n\n"
+                "解除绑定：\n  /skland解绑\n\n"
+                "本帮助：\n  /skland帮助"
+            )
+            event.stop_event()
+            return
+
+        if cmd == "skland状态":
+            record = self._db.get(qq_id)
+            if record is None:
+                yield event.plain_result(f"❌ 你尚未绑定森空岛账号。\n{_BIND_HELP}")
+                event.stop_event()
+                return
+            valid = await check_cred(record.cred)
+            update_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.updated_at))
+            status_icon = "✅ 有效" if valid else "❌ 已失效（请重新绑定）"
+            yield event.plain_result(
+                f"📋 森空岛绑定信息\n"
+                f"森空岛用户 ID：{record.skland_user_id}\n"
+                f"手机号：{record.phone[:3]}****{record.phone[-4:] if len(record.phone) >= 4 else record.phone}\n"
+                f"凭证状态：{status_icon}\n"
+                f"最后更新：{update_time}"
+            )
+            event.stop_event()
+            return
+
+        if cmd == "skland解绑":
+            deleted = self._db.delete(qq_id)
+            if deleted:
+                yield event.plain_result("✅ 已成功解除森空岛账号绑定，本地凭证已删除。")
+            else:
+                yield event.plain_result("❌ 你尚未绑定森空岛账号。")
+            event.stop_event()
+            return
+
+        if cmd == "skland发送验证码":
+            if len(args) < 1:
+                yield event.plain_result("用法：/skland发送验证码 手机号")
+                event.stop_event()
+                return
+            phone = args[0]
+            try:
+                await send_phone_code(phone)
+            except SklandAPIError as e:
+                yield event.plain_result(f"❌ 发送失败：{e}")
+                event.stop_event()
+                return
+            yield event.plain_result(
+                f"📱 验证码已发送至 {phone[:3]}****{phone[-4:]}，"
+                "请在 5 分钟内使用 /skland绑定验证码 完成绑定。"
+            )
+            event.stop_event()
+            return
+
+        if cmd == "skland绑定验证码":
+            if len(args) < 2:
+                yield event.plain_result("用法：/skland绑定验证码 手机号 验证码")
+                event.stop_event()
+                return
+            phone, sms_code = args[0], args[1]
+            try:
+                result = await login_with_code(phone, sms_code)
+            except SklandAPIError as e:
+                yield event.plain_result(f"❌ 登录失败：{e}")
+                event.stop_event()
+                return
+            self._db.upsert(
+                qq_id=qq_id,
+                cred=result["cred"],
+                token=result["token"],
+                skland_user_id=result["user_id"],
+                phone=phone,
+                updated_at=int(time.time()),
+            )
+            yield event.plain_result(
+                f"✅ 绑定成功！\n森空岛用户 ID：{result['user_id']}\n"
+                "凭证已安全保存，请勿将凭证告知他人。"
+            )
+            event.stop_event()
+            return
+
+        if cmd == "skland绑定":
+            if len(args) < 2:
+                yield event.plain_result(_BIND_HELP)
+                event.stop_event()
+                return
+            phone, password = args[0], args[1]
+            try:
+                result = await login_with_password(phone, password)
+            except SklandAPIError as e:
+                yield event.plain_result(f"❌ 登录失败：{e}")
+                event.stop_event()
+                return
+            self._db.upsert(
+                qq_id=qq_id,
+                cred=result["cred"],
+                token=result["token"],
+                skland_user_id=result["user_id"],
+                phone=phone,
+                updated_at=int(time.time()),
+            )
+            yield event.plain_result(
+                f"✅ 绑定成功！\n森空岛用户 ID：{result['user_id']}\n"
+                "凭证已安全保存，请勿将凭证告知他人。"
+            )
             event.stop_event()
