@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import re
 import shutil
@@ -19,7 +20,10 @@ from .skland_api import (
     login_with_code,
     login_with_password,
     send_phone_code,
+    setup_file_logger,
 )
+
+_plugin_logger = logging.getLogger("astrbot_plugin_ShuRosti_Bot")
 
 _AT_RE = re.compile(r"\[At:[^\]]*\]")
 
@@ -37,6 +41,7 @@ def _extract(message_str: str, bot_name: str):
         f"{bot_name}解绑",
         f"{bot_name}帮助",
         f"{bot_name}详细帮助",
+        f"{bot_name}签到",
         "开启自动签到",
         "关闭自动签到",
         "查阅本月签到奖励",
@@ -75,31 +80,39 @@ def _is_group_message(event: AstrMessageEvent) -> bool:
     return False
 
 
-async def _do_sign_for_user(db: TokenDatabase, qq_id: str, logger=None) -> str:
+def _format_awards(rewards: list) -> str:
+    parts = []
+    for r in rewards:
+        if isinstance(r, dict):
+            res = r.get("resource") or r
+            name = res.get("name", "")
+            count = r.get("count") or res.get("count", 1)
+            if name:
+                parts.append(f"{name}×{count}")
+    return "、".join(parts) or "无奖励信息"
+
+
+async def _do_sign_for_user(db: TokenDatabase, qq_id: str) -> str:
+    _plugin_logger.info(f"[sign] 开始为用户 {qq_id} 执行签到")
     record = await asyncio.to_thread(db.get, qq_id)
     if record is None:
         msg = f"[{qq_id}] 未绑定账号，跳过。"
-        if logger:
-            logger.info(msg)
+        _plugin_logger.info(msg)
         return msg
 
-    if logger:
-        logger.info(f"[{qq_id}] 检查凭证有效性")
+    _plugin_logger.info(f"[sign] [{qq_id}] 检查凭证有效性")
     valid = await check_cred(record.cred)
     if not valid:
         msg = f"[{qq_id}] 凭证已失效，请重新绑定。"
-        if logger:
-            logger.warning(msg)
+        _plugin_logger.warning(msg)
         return msg
 
     try:
-        if logger:
-            logger.info(f"[{qq_id}] 获取角色列表")
+        _plugin_logger.info(f"[sign] [{qq_id}] 获取角色列表")
         bindings = await get_binding_list(record.cred)
     except SklandAPIError as e:
         msg = f"[{qq_id}] 获取角色列表失败：{e}"
-        if logger:
-            logger.error(msg)
+        _plugin_logger.error(msg)
         return msg
 
     if not bindings:
@@ -108,32 +121,36 @@ async def _do_sign_for_user(db: TokenDatabase, qq_id: str, logger=None) -> str:
     results = []
     for b in bindings:
         uid = b["uid"]
-        nick = b["nick_name"] or uid
-        gid = b["channel_master_id"]
+        nick = b.get("nick_name") or uid
+        gid = b.get("channel_master_id", "1")
+        _plugin_logger.info(f"[sign] [{qq_id}] 正在签到角色 nick={nick} uid={uid}")
         try:
             res = await do_attendance(record.cred, uid, gid)
         except SklandAPIError as e:
+            _plugin_logger.error(f"[sign] [{qq_id}] 角色 {nick} 签到失败：{e}")
             results.append(f"  {nick}：签到失败 — {e}")
             continue
         if res["already_signed"]:
             results.append(f"  {nick}：今日已签到 ✓")
         else:
-            awards = "、".join(
-                f"{r.get('name', '')}×{r.get('count', 0)}"
-                for r in res["rewards"]
-            ) or "无奖励信息"
+            awards = _format_awards(res["rewards"])
             results.append(f"  {nick}：签到成功！获得 {awards}")
 
-    return "\n".join(results)
+    result_str = "\n".join(results)
+    _plugin_logger.info(f"[sign] [{qq_id}] 签到完成：{result_str}")
+    return result_str
 
 
-@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.11")
+@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.12")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self._config = config
         self._data_dir = StarTools.get_data_dir("shurosti_bot")
         self._img_dir = str(self._data_dir / "sign_images")
+        self._log_dir = str(self._data_dir / "logs")
+        setup_file_logger(self._log_dir)
+        _plugin_logger.info(f"[init] 插件初始化，数据目录：{self._data_dir}")
         self._migrate_old_data()
         self._db = TokenDatabase(str(self._data_dir / "tokens.db"))
         self._scheduler_task: asyncio.Task | None = None
@@ -190,11 +207,12 @@ class MyPlugin(Star):
 
     async def _run_all_auto_sign(self):
         qq_ids = await asyncio.to_thread(self._db.all_auto_sign_qq_ids)
+        _plugin_logger.info(f"[auto_sign] 开始批量自动签到，共 {len(qq_ids)} 个用户")
         for qq_id in qq_ids:
             try:
-                await _do_sign_for_user(self._db, qq_id, self.context.logger)
+                await _do_sign_for_user(self._db, qq_id)
             except Exception as e:
-                self.context.logger.error(f"用户{qq_id}自动签到失败：{e}")
+                _plugin_logger.error(f"[auto_sign] 用户 {qq_id} 自动签到异常：{e}", exc_info=True)
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_all_message(self, event: AstrMessageEvent):
@@ -236,6 +254,7 @@ class MyPlugin(Star):
                 f"/{bot_name}验证码 验证码          — 验证码登录第二步\n"
                 f"/{bot_name}状态                  — 查看绑定状态\n"
                 f"/{bot_name}解绑                  — 解除账号绑定\n"
+                f"/{bot_name}签到                  — 立即手动签到一次\n"
                 f"/开启自动签到                     — 开启每日自动签到\n"
                 f"/关闭自动签到                     — 关闭每日自动签到\n"
                 f"/查阅本月签到奖励                 — 查看本月签到奖励\n"
@@ -269,7 +288,10 @@ class MyPlugin(Star):
                 "解除当前账号与Bot的绑定，本地保存的凭证将被彻底删除。\n"
                 "解绑后自动签到也将同步关闭。\n"
                 "\n"
-                "【/开启自动签到】\n"
+                f"【/{bot_name}签到】\n"
+                "立即手动触发一次森空岛签到，适用于不想等待自动签到的情况。\n"
+                "\n"
+                f"【/开启自动签到】\n"
                 "开启每日自动签到功能，Bot 将在每天早上 6:00 自动完成签到。\n"
                 "开启后会立即执行一次签到以确认配置正常。\n"
                 "\n"
@@ -406,6 +428,19 @@ class MyPlugin(Star):
             event.stop_event()
             return
 
+        if cmd == f"{bot_name}签到":
+            record = await asyncio.to_thread(self._db.get, qq_id)
+            if record is None:
+                yield event.plain_result(f"❌ 请先绑定账号。\n{bind_help}")
+                event.stop_event()
+                return
+            _plugin_logger.info(f"[manual_sign] 用户 {qq_id} 触发手动签到")
+            yield event.plain_result("⏳ 正在签到，请稍候…")
+            sign_result = await _do_sign_for_user(self._db, qq_id)
+            yield event.plain_result(f"📝 签到结果：\n{sign_result}")
+            event.stop_event()
+            return
+
         if cmd == "开启自动签到":
             record = await asyncio.to_thread(self._db.get, qq_id)
             if record is None:
@@ -415,7 +450,7 @@ class MyPlugin(Star):
             await asyncio.to_thread(self._db.set_auto_sign, qq_id, True)
             yield event.plain_result("⏰ 已开启自动签到！立即执行一次签到中…")
 
-            sign_result = await _do_sign_for_user(self._db, qq_id, self.context.logger)
+            sign_result = await _do_sign_for_user(self._db, qq_id)
             yield event.plain_result(f"📝 签到结果：\n{sign_result}")
             event.stop_event()
             return

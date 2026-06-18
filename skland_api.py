@@ -4,12 +4,29 @@ import gzip
 import hashlib
 import json
 import logging
+import os
 import time
 import uuid
 
 import aiohttp
 
 logger = logging.getLogger("astrbot_plugin_ShuRosti_Bot")
+
+
+def setup_file_logger(log_dir: str) -> None:
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "shurosti_bot.log")
+    if any(isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == os.path.abspath(log_path)
+           for h in logger.handlers):
+        return
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(fh)
 
 _HG_BASE = "https://as.hypergryph.com"
 _SK_BASE = "https://zonai.skland.com"
@@ -401,6 +418,9 @@ async def get_binding_list(cred: str) -> list[dict]:
     return result
 
 
+_ALREADY_SIGNED_KEYWORDS = ("今天已经签到", "请勿重复签到", "already", "10001", "重复签到")
+
+
 async def do_attendance(cred: str, uid: str, game_id: str = "1") -> dict:
     logger.info(f"[do_attendance] 尝试签到 uid={uid} game_id={game_id}")
     try:
@@ -409,11 +429,12 @@ async def do_attendance(cred: str, uid: str, game_id: str = "1") -> dict:
             {"uid": uid, "gameId": game_id},
             cred,
         )
-        logger.info(f"[do_attendance] 签到成功 uid={uid}")
-        return {"already_signed": False, "rewards": data.get("awards", data.get("resourceList", []))}
+        awards = data.get("awards") or data.get("resourceList") or []
+        logger.info(f"[do_attendance] 签到成功 uid={uid} 奖励={awards}")
+        return {"already_signed": False, "rewards": awards}
     except SklandAPIError as e:
         msg = str(e)
-        if "今天已经签到" in msg or "10001" in msg:
+        if any(kw in msg for kw in _ALREADY_SIGNED_KEYWORDS):
             logger.info(f"[do_attendance] 今日已签到 uid={uid}")
             return {"already_signed": True, "rewards": []}
         logger.error(f"[do_attendance] 签到失败 uid={uid} 错误={e}")

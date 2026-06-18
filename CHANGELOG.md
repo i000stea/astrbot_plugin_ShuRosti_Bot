@@ -2,13 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.12] - 2026-06-18
+
+### Added
+
+- 新增手动签到指令 `/{bot_name}签到`，用户可随时触发立即签到
+- 新增日志文件写入功能，日志保存至 `{data_dir}/logs/shurosti_bot.log`
+
+### Fixed
+
+- 修复已签到状态判断逻辑，现在正确匹配森空岛返回的多种"重复签到"消息
+- 修复签到奖励格式化函数 `_format_awards`，正确解析嵌套的 `resource` 结构
+- 修复 `_do_sign_for_user` 内部日志记录，移除对外部 logger 参数的依赖
+
 ## [1.0.11] - 2026-06-18
-
-### Changed
-
-- 优化日志记录方式，统一使用 `self.context.logger` 确保控制台正常输出
-
-## [1.0.10] - 2026-06-18
 
 ### Added
 
