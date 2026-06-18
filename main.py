@@ -121,7 +121,7 @@ async def _do_sign_for_user(db: TokenDatabase, qq_id: str) -> str:
     for b in bindings:
         uid = b["uid"]
         nick = b.get("nick_name") or uid
-        gid = b.get("channel_master_id", "1")
+        gid = b.get("game_id", "1")
         _plugin_logger.info(f"[sign] [{qq_id}] 正在签到角色 nick={nick} uid={uid}")
         try:
             res = await do_attendance(record.cred, uid, gid, record.token)
@@ -140,7 +140,7 @@ async def _do_sign_for_user(db: TokenDatabase, qq_id: str) -> str:
     return result_str
 
 
-@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.15")
+@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.16")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -342,7 +342,7 @@ class MyPlugin(Star):
                 sign_list = await get_monthly_rewards(
                     record.cred,
                     default_binding["uid"],
-                    default_binding.get("channel_master_id", "1"),
+                    default_binding.get("game_id", "1"),
                     record.token,
                 )
             except SklandAPIError as e:

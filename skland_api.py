@@ -440,6 +440,7 @@ async def get_binding_list(cred: str, token: str | None = None) -> list[dict]:
                     "channel_master_id": binding.get("channelMasterId", "1"),
                     "channel_name": binding.get("channelName", "官服"),
                     "is_default": binding.get("isDefault", False),
+                    "game_id": str(binding.get("gameId", 1)),
                 })
     logger.info(f"[get_binding_list] 提取结果: {result}")
     return result
