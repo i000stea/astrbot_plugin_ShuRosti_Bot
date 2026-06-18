@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.11] - 2026-06-18
+
+### Changed
+
+- 优化日志记录方式，统一使用 `self.context.logger` 确保控制台正常输出
+
 ## [1.0.10] - 2026-06-18
 
 ### Added
