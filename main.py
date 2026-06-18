@@ -75,19 +75,32 @@ def _is_group_message(event: AstrMessageEvent) -> bool:
     return False
 
 
-async def _do_sign_for_user(db: TokenDatabase, qq_id: str) -> str:
+async def _do_sign_for_user(db: TokenDatabase, qq_id: str, logger=None) -> str:
     record = await asyncio.to_thread(db.get, qq_id)
     if record is None:
-        return f"[{qq_id}] 未绑定账号，跳过。"
+        msg = f"[{qq_id}] 未绑定账号，跳过。"
+        if logger:
+            logger.info(msg)
+        return msg
 
+    if logger:
+        logger.info(f"[{qq_id}] 检查凭证有效性")
     valid = await check_cred(record.cred)
     if not valid:
-        return f"[{qq_id}] 凭证已失效，请重新绑定。"
+        msg = f"[{qq_id}] 凭证已失效，请重新绑定。"
+        if logger:
+            logger.warning(msg)
+        return msg
 
     try:
+        if logger:
+            logger.info(f"[{qq_id}] 获取角色列表")
         bindings = await get_binding_list(record.cred)
     except SklandAPIError as e:
-        return f"[{qq_id}] 获取角色列表失败：{e}"
+        msg = f"[{qq_id}] 获取角色列表失败：{e}"
+        if logger:
+            logger.error(msg)
+        return msg
 
     if not bindings:
         return f"[{qq_id}] 未找到绑定的明日方舟角色。"
@@ -114,7 +127,7 @@ async def _do_sign_for_user(db: TokenDatabase, qq_id: str) -> str:
     return "\n".join(results)
 
 
-@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.9")
+@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.10")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -179,7 +192,7 @@ class MyPlugin(Star):
         qq_ids = await asyncio.to_thread(self._db.all_auto_sign_qq_ids)
         for qq_id in qq_ids:
             try:
-                await _do_sign_for_user(self._db, qq_id)
+                await _do_sign_for_user(self._db, qq_id, self.context.logger)
             except Exception as e:
                 self.context.logger.error(f"用户{qq_id}自动签到失败：{e}")
 
@@ -402,7 +415,7 @@ class MyPlugin(Star):
             await asyncio.to_thread(self._db.set_auto_sign, qq_id, True)
             yield event.plain_result("⏰ 已开启自动签到！立即执行一次签到中…")
 
-            sign_result = await _do_sign_for_user(self._db, qq_id)
+            sign_result = await _do_sign_for_user(self._db, qq_id, self.context.logger)
             yield event.plain_result(f"📝 签到结果：\n{sign_result}")
             event.stop_event()
             return

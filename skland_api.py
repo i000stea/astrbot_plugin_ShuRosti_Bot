@@ -3,10 +3,13 @@ import base64
 import gzip
 import hashlib
 import json
+import logging
 import time
 import uuid
 
 import aiohttp
+
+logger = logging.getLogger("astrbot_plugin_ShuRosti_Bot")
 
 _HG_BASE = "https://as.hypergryph.com"
 _SK_BASE = "https://zonai.skland.com"
@@ -163,6 +166,7 @@ def _get_fallback_did() -> str:
 async def _get_did() -> str:
     crypto = _try_import_crypto()
     if crypto is None:
+        logger.warning("[_get_did] cryptography 未安装，使用回退 DID")
         return _get_fallback_did()
 
     serialization, asym_padding, _, _, _, _, _ = crypto
@@ -211,9 +215,11 @@ async def _get_did() -> str:
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 body = await resp.json(content_type=None)
+                logger.info(f"[_get_did] 响应码={resp.status} body={body}")
                 if body.get("code") == 1100:
                     return "B" + body["detail"]["deviceId"]
-    except Exception:
+    except Exception as e:
+        logger.error(f"[_get_did] 异常: {e}")
         pass
 
     return _get_fallback_did()
@@ -221,17 +227,22 @@ async def _get_did() -> str:
 
 async def _hg_post(path: str, payload: dict, did: str) -> dict:
     headers = {**_HEADERS, "dId": did}
+    url = _HG_BASE + path
+    logger.info(f"[hg_post] 请求: {url} payload={payload}")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                _HG_BASE + path,
+                url,
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                logger.info(f"[hg_post] HTTP状态码: {resp.status}")
                 body = await resp.json(content_type=None)
     except Exception as e:
+        logger.error(f"[hg_post] 网络请求失败: {url} 错误={e}")
         raise SklandAPIError(f"网络请求失败：{e}") from e
+    logger.info(f"[hg_post] 响应: {url} body={body}")
     if body.get("status") != 0:
         raise SklandAPIError(body.get("msg") or body.get("message") or str(body))
     return body.get("data", {})
@@ -241,17 +252,22 @@ async def _sk_post(path: str, payload: dict, cred: str | None = None) -> dict:
     headers = {**_HEADERS}
     if cred:
         headers["cred"] = cred
+    url = _SK_BASE + path
+    logger.info(f"[sk_post] 请求: {url} payload={payload}")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                _SK_BASE + path,
+                url,
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                logger.info(f"[sk_post] HTTP状态码: {resp.status}")
                 body = await resp.json(content_type=None)
     except Exception as e:
+        logger.error(f"[sk_post] 网络请求失败: {url} 错误={e}")
         raise SklandAPIError(f"网络请求失败：{e}") from e
+    logger.info(f"[sk_post] 响应: {url} body={body}")
     if body.get("code") != 0:
         raise SklandAPIError(body.get("message") or str(body))
     return body.get("data", {})
@@ -292,6 +308,7 @@ async def send_phone_code(phone: str) -> None:
 
 
 async def login_with_password(phone: str, password: str) -> dict:
+    logger.info(f"[login_with_password] 开始密码登录 phone={phone[:3]}****{phone[-4:]}")
     did = await _get_did()
     data = await _hg_post(
         "/user/auth/v1/token_by_phone_password",
@@ -302,10 +319,12 @@ async def login_with_password(phone: str, password: str) -> dict:
     if not hg_token:
         raise SklandAPIError("密码登录失败，未获取到鹰角 token")
     oauth_code = await _get_oauth_code(hg_token, did)
+    logger.info(f"[login_with_password] 密码登录成功 phone={phone[:3]}****{phone[-4:]}")
     return await _get_cred_by_code(oauth_code)
 
 
 async def login_with_code(phone: str, sms_code: str) -> dict:
+    logger.info(f"[login_with_code] 开始验证码登录 phone={phone[:3]}****{phone[-4:]}")
     did = await _get_did()
     data = await _hg_post(
         "/user/auth/v2/token_by_phone_code",
@@ -316,11 +335,13 @@ async def login_with_code(phone: str, sms_code: str) -> dict:
     if not hg_token:
         raise SklandAPIError("验证码登录失败，未获取到鹰角 token")
     oauth_code = await _get_oauth_code(hg_token, did)
+    logger.info(f"[login_with_code] 验证码登录成功 phone={phone[:3]}****{phone[-4:]}")
     return await _get_cred_by_code(oauth_code)
 
 
 async def check_cred(cred: str) -> bool:
     headers = {**_HEADERS, "cred": cred}
+    logger.info(f"[check_cred] 检查 cred 有效性")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -328,25 +349,33 @@ async def check_cred(cred: str) -> bool:
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
+                logger.info(f"[check_cred] HTTP状态码: {resp.status}")
                 body = await resp.json(content_type=None)
+        logger.info(f"[check_cred] 响应: code={body.get('code')}")
         return body.get("code") == 0
-    except Exception:
+    except Exception as e:
+        logger.error(f"[check_cred] 请求失败: {e}")
         return False
 
 
 async def _sk_get(path: str, params: dict | None, cred: str) -> dict:
     headers = {**_HEADERS, "cred": cred}
+    url = _SK_BASE + path
+    logger.info(f"[sk_get] 请求: {url} params={params}")
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                _SK_BASE + path,
+                url,
                 params=params,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                logger.info(f"[sk_get] HTTP状态码: {resp.status}")
                 body = await resp.json(content_type=None)
     except Exception as e:
+        logger.error(f"[sk_get] 网络请求失败: {url} 错误={e}")
         raise SklandAPIError(f"网络请求失败：{e}") from e
+    logger.info(f"[sk_get] 响应: {url} body={body}")
     if body.get("code") != 0:
         raise SklandAPIError(body.get("message") or str(body))
     return body.get("data", {})
@@ -354,6 +383,7 @@ async def _sk_get(path: str, params: dict | None, cred: str) -> dict:
 
 async def get_binding_list(cred: str) -> list[dict]:
     data = await _sk_get("/api/v1/game/player/binding", None, cred)
+    logger.info(f"[get_binding_list] 原始数据: {data}")
     result = []
     for game in data.get("list", []):
         if game.get("appCode") != "arknights":
@@ -367,28 +397,35 @@ async def get_binding_list(cred: str) -> list[dict]:
                     "channel_name": binding.get("channelName", "官服"),
                     "is_default": binding.get("isDefault", False),
                 })
+    logger.info(f"[get_binding_list] 提取结果: {result}")
     return result
 
 
 async def do_attendance(cred: str, uid: str, game_id: str = "1") -> dict:
+    logger.info(f"[do_attendance] 尝试签到 uid={uid} game_id={game_id}")
     try:
         data = await _sk_post(
             "/api/v1/game/attendance",
             {"uid": uid, "gameId": game_id},
             cred,
         )
+        logger.info(f"[do_attendance] 签到成功 uid={uid}")
         return {"already_signed": False, "rewards": data.get("awards", data.get("resourceList", []))}
     except SklandAPIError as e:
         msg = str(e)
         if "今天已经签到" in msg or "10001" in msg:
+            logger.info(f"[do_attendance] 今日已签到 uid={uid}")
             return {"already_signed": True, "rewards": []}
+        logger.error(f"[do_attendance] 签到失败 uid={uid} 错误={e}")
         raise
 
 
 async def get_monthly_rewards(cred: str, uid: str, game_id: str = "1") -> list[dict]:
+    logger.info(f"[get_monthly_rewards] 获取签到奖励 uid={uid} game_id={game_id}")
     data = await _sk_get(
         "/api/v1/game/attendance/reward",
         {"uid": uid, "gameId": game_id},
         cred,
     )
+    logger.info(f"[get_monthly_rewards] 获取成功 uid={uid} 条目数={len(data.get('signInList', []))}")
     return data.get("signInList", [])

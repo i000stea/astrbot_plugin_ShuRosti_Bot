@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.10] - 2026-06-18
+
+### Added
+
+- 新增详细日志记录，便于追踪签到过程中的 API 请求和响应
+- `_hg_post`, `_sk_post`, `_sk_get` 函数新增请求/响应日志
+- `check_cred`, `get_binding_list`, `do_attendance`, `get_monthly_rewards` 函数新增日志
+- `login_with_password`, `login_with_code` 函数新增登录流程日志
+
+### Changed
+
+- `_do_sign_for_user` 函数增加 logger 参数，支持详细日志输出
+
 ## [1.0.9] - 2026-06-18
 
 ### Fixed
