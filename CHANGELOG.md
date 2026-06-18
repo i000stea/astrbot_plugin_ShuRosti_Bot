@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2026-06-18
+
+### Fixed
+
+- 修复网络请求异常（连接超时、DNS 解析失败等）无法被正确捕获的问题，现在会显示具体的错误信息而非模糊的"请求异常"
+
 ## [1.0.7] - 2026-06-18
 
 ### Added

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import gzip
 import hashlib
@@ -220,14 +221,17 @@ async def _get_did() -> str:
 
 async def _hg_post(path: str, payload: dict, did: str) -> dict:
     headers = {**_HEADERS, "dId": did}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            _HG_BASE + path,
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=15),
-        ) as resp:
-            body = await resp.json(content_type=None)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                _HG_BASE + path,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                body = await resp.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        raise SklandAPIError(f"网络请求失败：{e}") from e
     if body.get("status") != 0:
         raise SklandAPIError(body.get("msg") or body.get("message") or str(body))
     return body.get("data", {})
@@ -237,14 +241,17 @@ async def _sk_post(path: str, payload: dict, cred: str | None = None) -> dict:
     headers = {**_HEADERS}
     if cred:
         headers["cred"] = cred
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            _SK_BASE + path,
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=15),
-        ) as resp:
-            body = await resp.json(content_type=None)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                _SK_BASE + path,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                body = await resp.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        raise SklandAPIError(f"网络请求失败：{e}") from e
     if body.get("code") != 0:
         raise SklandAPIError(body.get("message") or str(body))
     return body.get("data", {})
@@ -329,14 +336,17 @@ async def check_cred(cred: str) -> bool:
 
 async def _sk_get(path: str, params: dict | None, cred: str) -> dict:
     headers = {**_HEADERS, "cred": cred}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            _SK_BASE + path,
-            params=params,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=15),
-        ) as resp:
-            body = await resp.json(content_type=None)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                _SK_BASE + path,
+                params=params,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                body = await resp.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        raise SklandAPIError(f"网络请求失败：{e}") from e
     if body.get("code") != 0:
         raise SklandAPIError(body.get("message") or str(body))
     return body.get("data", {})
