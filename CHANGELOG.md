@@ -2,7 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.9] - 2026-06-18
+
+### Fixed
+
+- 优化持久化存储相关处理，确保数据目录迁移稳定性
+
+### Changed
+
+- 签到功能异常捕获机制进一步完善
+
 ## [1.0.8] - 2026-06-18
+
+### Changed
+
+- 持久化存储路径改用 `StarTools.get_data_dir()` 获取标准数据目录，确保数据可靠存储
+- 签到图片存储路径支持动态配置，通过 `_img_dir` 参数传递
+
+### Added
+
+- 旧数据迁移功能，升级时自动迁移原有数据库和签到图片
 
 ### Fixed
 

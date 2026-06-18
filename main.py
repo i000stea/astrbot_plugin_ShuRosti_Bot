@@ -1,11 +1,12 @@
 import asyncio
 import os
 import re
+import shutil
 import time
 
 from astrbot.api import AstrBotConfig
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, register, StarTools
 
 from .database import TokenDatabase
 from .sign_image import cached_image_path, format_rewards_text, generate_monthly_image
@@ -19,8 +20,6 @@ from .skland_api import (
     login_with_password,
     send_phone_code,
 )
-
-_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "tokens.db")
 
 _AT_RE = re.compile(r"\[At:[^\]]*\]")
 
@@ -115,13 +114,31 @@ async def _do_sign_for_user(db: TokenDatabase, qq_id: str) -> str:
     return "\n".join(results)
 
 
-@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.8")
+@register("shurosti_bot", "iTea", "黍饼Bot — 森空岛数据查询插件", "1.0.9")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self._config = config
-        self._db = TokenDatabase(_DB_PATH)
+        self._data_dir = StarTools.get_data_dir("shurosti_bot")
+        self._img_dir = str(self._data_dir / "sign_images")
+        self._migrate_old_data()
+        self._db = TokenDatabase(str(self._data_dir / "tokens.db"))
         self._scheduler_task: asyncio.Task | None = None
+
+    def _migrate_old_data(self) -> None:
+        old_db_path = os.path.join(os.path.dirname(__file__), "data", "tokens.db")
+        new_db_path = str(self._data_dir / "tokens.db")
+        if os.path.exists(old_db_path) and not os.path.exists(new_db_path):
+            os.makedirs(os.path.dirname(new_db_path), exist_ok=True)
+            shutil.copy2(old_db_path, new_db_path)
+        old_img_dir = os.path.join(os.path.dirname(__file__), "data", "sign_images")
+        if os.path.exists(old_img_dir) and not os.path.exists(self._img_dir):
+            os.makedirs(os.path.dirname(self._img_dir), exist_ok=True)
+            for f in os.listdir(old_img_dir):
+                src = os.path.join(old_img_dir, f)
+                dst = os.path.join(self._img_dir, f)
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
 
     @property
     def _bot_name(self) -> str:
@@ -414,7 +431,7 @@ class MyPlugin(Star):
                 event.stop_event()
                 return
 
-            cached = cached_image_path(qq_id)
+            cached = cached_image_path(qq_id, self._img_dir)
             if cached is not None:
                 yield event.image_result(cached)
                 event.stop_event()
@@ -444,7 +461,7 @@ class MyPlugin(Star):
                 event.stop_event()
                 return
 
-            img_path = generate_monthly_image(sign_list, qq_id)
+            img_path = generate_monthly_image(sign_list, qq_id, self._img_dir)
             if img_path is not None:
                 yield event.image_result(img_path)
             else:

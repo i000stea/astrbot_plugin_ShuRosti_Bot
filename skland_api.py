@@ -230,7 +230,7 @@ async def _hg_post(path: str, payload: dict, did: str) -> dict:
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 body = await resp.json(content_type=None)
-    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+    except Exception as e:
         raise SklandAPIError(f"网络请求失败：{e}") from e
     if body.get("status") != 0:
         raise SklandAPIError(body.get("msg") or body.get("message") or str(body))
@@ -250,7 +250,7 @@ async def _sk_post(path: str, payload: dict, cred: str | None = None) -> dict:
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 body = await resp.json(content_type=None)
-    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+    except Exception as e:
         raise SklandAPIError(f"网络请求失败：{e}") from e
     if body.get("code") != 0:
         raise SklandAPIError(body.get("message") or str(body))
@@ -345,7 +345,7 @@ async def _sk_get(path: str, params: dict | None, cred: str) -> dict:
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 body = await resp.json(content_type=None)
-    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+    except Exception as e:
         raise SklandAPIError(f"网络请求失败：{e}") from e
     if body.get("code") != 0:
         raise SklandAPIError(body.get("message") or str(body))

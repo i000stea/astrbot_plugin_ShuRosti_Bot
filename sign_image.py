@@ -2,8 +2,6 @@ import os
 import time
 from typing import Optional
 
-_IMG_DIR = os.path.join(os.path.dirname(__file__), "data", "sign_images")
-
 _RARITY_COLORS = {
     1: (180, 180, 180),
     2: (100, 200, 100),
@@ -59,24 +57,28 @@ def _round_rect(draw, xy, radius, fill, outline, outline_width=2):
     draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill, outline=outline, width=outline_width)
 
 
-def _cache_path(year: int, month: int, qq_id: str) -> str:
-    os.makedirs(_IMG_DIR, exist_ok=True)
-    return os.path.join(_IMG_DIR, f"{qq_id}_{year}_{month:02d}.png")
+def _cache_path(year: int, month: int, qq_id: str, img_dir: str) -> str:
+    os.makedirs(img_dir, exist_ok=True)
+    return os.path.join(img_dir, f"{qq_id}_{year}_{month:02d}.png")
 
 
-def cached_image_path(qq_id: str) -> Optional[str]:
+def cached_image_path(qq_id: str, img_dir: str | None = None) -> Optional[str]:
+    if img_dir is None:
+        img_dir = os.path.join(os.path.dirname(__file__), "data", "sign_images")
     t = time.localtime()
-    path = _cache_path(t.tm_year, t.tm_mon, qq_id)
+    path = _cache_path(t.tm_year, t.tm_mon, qq_id, img_dir)
     return path if os.path.exists(path) else None
 
 
-def generate_monthly_image(sign_list: list[dict], qq_id: str) -> Optional[str]:
+def generate_monthly_image(sign_list: list[dict], qq_id: str, img_dir: str | None = None) -> Optional[str]:
+    if img_dir is None:
+        img_dir = os.path.join(os.path.dirname(__file__), "data", "sign_images")
     Image, ImageDraw, ImageFont = _try_pil()
     if Image is None:
         return None
 
     t = time.localtime()
-    path = _cache_path(t.tm_year, t.tm_mon, qq_id)
+    path = _cache_path(t.tm_year, t.tm_mon, qq_id, img_dir)
 
     days = len(sign_list)
     if days == 0:
