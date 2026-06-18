@@ -48,6 +48,16 @@ class TokenDatabase:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS auto_sign (
+                    qq_id      TEXT PRIMARY KEY,
+                    enabled    INTEGER NOT NULL DEFAULT 1,
+                    notify_id  TEXT NOT NULL DEFAULT '',
+                    updated_at INTEGER NOT NULL
+                )
+                """
+            )
             conn.commit()
 
     def upsert(self, qq_id: str, cred: str, token: str, skland_user_id: str, phone: str, updated_at: int) -> None:
@@ -128,3 +138,34 @@ class TokenDatabase:
             )
             conn.commit()
         return cursor.rowcount > 0
+
+    def set_auto_sign(self, qq_id: str, enabled: bool, notify_id: str = "") -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO auto_sign (qq_id, enabled, notify_id, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(qq_id) DO UPDATE SET
+                    enabled    = excluded.enabled,
+                    notify_id  = excluded.notify_id,
+                    updated_at = excluded.updated_at
+                """,
+                (qq_id, 1 if enabled else 0, notify_id, int(__import__("time").time())),
+            )
+            conn.commit()
+
+    def get_auto_sign(self, qq_id: str) -> Optional[bool]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT enabled FROM auto_sign WHERE qq_id = ?", (qq_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return bool(row["enabled"])
+
+    def all_auto_sign_qq_ids(self) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT qq_id FROM auto_sign WHERE enabled = 1"
+            ).fetchall()
+        return [r["qq_id"] for r in rows]

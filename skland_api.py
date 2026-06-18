@@ -325,3 +325,60 @@ async def check_cred(cred: str) -> bool:
         return body.get("code") == 0
     except Exception:
         return False
+
+
+async def _sk_get(path: str, params: dict | None, cred: str) -> dict:
+    headers = {**_HEADERS, "cred": cred}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            _SK_BASE + path,
+            params=params,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as resp:
+            body = await resp.json(content_type=None)
+    if body.get("code") != 0:
+        raise SklandAPIError(body.get("message") or str(body))
+    return body.get("data", {})
+
+
+async def get_binding_list(cred: str) -> list[dict]:
+    data = await _sk_get("/api/v1/game/player/binding", None, cred)
+    result = []
+    for game in data.get("list", []):
+        if game.get("appCode") != "arknights":
+            continue
+        for binding in game.get("bindingList", []):
+            if not binding.get("isDelete", False):
+                result.append({
+                    "uid": binding["uid"],
+                    "nick_name": binding.get("nickName", ""),
+                    "channel_master_id": binding.get("channelMasterId", "1"),
+                    "channel_name": binding.get("channelName", "官服"),
+                    "is_default": binding.get("isDefault", False),
+                })
+    return result
+
+
+async def do_attendance(cred: str, uid: str, game_id: str = "1") -> dict:
+    try:
+        data = await _sk_post(
+            "/api/v1/game/attendance",
+            {"uid": uid, "gameId": game_id},
+            cred,
+        )
+        return {"already_signed": False, "rewards": data.get("awards", data.get("resourceList", []))}
+    except SklandAPIError as e:
+        msg = str(e)
+        if "今天已经签到" in msg or "10001" in msg:
+            return {"already_signed": True, "rewards": []}
+        raise
+
+
+async def get_monthly_rewards(cred: str, uid: str, game_id: str = "1") -> list[dict]:
+    data = await _sk_get(
+        "/api/v1/game/attendance/reward",
+        {"uid": uid, "gameId": game_id},
+        cred,
+    )
+    return data.get("signInList", [])
